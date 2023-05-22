@@ -40,13 +40,20 @@ def process_msg(message, conn, addr):
         # conn.send("Hello",username,"\n::: Welcome to the server :::".encode())
         str_message = ">> Hello " + username + "\n::: Welcome to the PyChat :::"
         response = {"type": "INIT","clients": get_clients() , "message": str_message}
-        print(response)
+        # print(response)
         conn.send(to_json(response).encode())
         print("New client connected: ", username, ":", addr[1])
     
     elif message['type'] == 'connect':
-        response = {"type": "connect","status":True ,"sender": message['sender'], "message": "Connect Request successful"}
+        response = {"type": "connect","status":True ,"connect_to": message['receiver'], "message": "Connect Request successful"}
         conn.send(to_json(response).encode())
+    
+    elif message['type'] == 'MSG':
+        send_to = message['send_to']
+        if send_to in client_unames:
+            port = client_unames[send_to]
+            clients[port][1].send(message['message'].encode())
+
     
     else:
         print("Unknown message type: ", message['type'])

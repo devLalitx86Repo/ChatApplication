@@ -12,7 +12,9 @@ def to_json(data):
 def prepare_msg(type, message, **kwargs):
     message = {"sender": state["username"], "type": type, "message": message}
     if type == "connect":
-        message["receiver"] = kwargs["receiver"]        
+        message["receiver"] = kwargs["receiver"]
+    elif type == "MSG":
+        message["send_to"] = state["connected_to"] 
     return to_json(message)
     
 
@@ -20,7 +22,7 @@ def connect_response(server_socket):
     print("Available Contacts:")
     for i, client in enumerate(state["avail_clients"]):
         print(i+1, ". ", client)
-    print("\n")
+    print(":::::::::::::::::::::::::::::::::::::::::::")
     while not state['is_connected']:        
         message = input("Talk to: ")
         # json_msg = to_json({"type": "MSG","message": message})
@@ -32,8 +34,25 @@ def connect_response(server_socket):
 def server_response(server_socket):
     while not state['is_connected']:
         message = server_socket.recv(2048).decode()
-        print("<SERVER> : ",message)
+        if message:
+            print("<SERVER> : ",message)
+            message = json.loads(message)
+            if message['status']:
+                state['connected_to'] = message['connect_to']
+                state['is_connected'] = True
+        else:
+            print("Disconnected from server...")
+            break
 
+def recv_message(server_socket):
+    while True:
+        message = server_socket.recv(2048).decode()
+        if message:
+            print(message)
+        else:
+            print("Disconnected from server...")
+            break
+        
 def init_client(server_socket):
     json_msg = prepare_msg("INIT", "Hello !")
     server_socket.send(json_msg)
@@ -42,12 +61,18 @@ def init_client(server_socket):
     server_response = json.loads(server_response)
     state["avail_clients"] = server_response["clients"].split(",")
 
+def send_message(server_socket):
+    while state["is_connected"]:
+        message = input(">> ")
+        json_msg = prepare_msg("MSG", message)
+        server_socket.send(json_msg)
+
 
 def main():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     IP_ADDR = sys.argv[1]
     PORT = int(sys.argv[2])
-    server_socket.connect((IP_ADDR, PORT))
+    server_socket.connect((IP_ADDR, PORT)) 
     
     state['is_connected'] = False
     state["username"] = input("Enter your username: ")
@@ -61,14 +86,35 @@ def main():
 
     thread_user_response = Thread(target=connect_response, args=(server_socket,))
     thread_server_response = Thread(target=server_response, args=(server_socket,))
+    thread_user_send = Thread(target=send_message, args=(server_socket,))
+    thread_user_recv = Thread(target=recv_message, args=(server_socket,))
+
     thread_user_response.start()
     thread_server_response.start()
-    # thread_user_response.join()
-    # thread_server_response.join()
+    
     #lock
     while True:
         if state['is_connected']: break
-        
+    
+    if state['is_connected']:
+
+        thread_user_response.join()
+        thread_server_response.join()
+        print("You are now connected to ", state['connected_to'])
+        thread_user_send.start()
+        thread_user_recv.start()
+
+    while True:
+        if not state['is_connected']:
+            server_socket.shutdown(socket.SHUT_RDWR)
+            server_socket.close()
+            thread_user_send.join()
+            thread_user_recv.join()
+            print("Connection closed")
+            break
+
+    print("Exiting...")
+
 
 if __name__ == "__main__":
     
