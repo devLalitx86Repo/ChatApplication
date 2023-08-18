@@ -3,8 +3,10 @@ import sys
 import json
 
 from threading import Thread
-
+import threading
+input_lock=threading.Lock()
 state = {}
+
 
 def to_json(data):
     return json.dumps(data).encode()
@@ -16,39 +18,62 @@ def prepare_msg(type, message, **kwargs):
     elif type == "MSG":
         message["send_to"] = state["connected_to"] 
     return to_json(message)
-    
+
 
 def connect_response(server_socket):    
     print("Available Contacts:")
     for i, client in enumerate(state["avail_clients"]):
         print(i+1, ". ", client)
     print(":::::::::::::::::::::::::::::::::::::::::::")
-    while not state['is_connected']:        
-        message = input("Talk to: ")
-        # json_msg = to_json({"type": "MSG","message": message})
-        server_request = prepare_msg("connect", "Connect Request",receiver=message)
-        server_socket.send(server_request)
-        # server_response = server_socket.recv(2048).decode()
-        # print(server_response)
+    while not state['is_connected']: 
+        if not state['aquire_lock']:
+            message = input("Talk to: ")
+            # json_msg = to_json({"type": "MSG","message": message})
+            server_request = prepare_msg("connect", "Connect Request",receiver=message)
+            print("----server_request----",server_request)
+            server_socket.send(server_request)
+            state['aquire_lock']=True
+            # server_response = server_socket.recv(2048).decode()
+            # print(server_response)
+        
 
 def server_response(server_socket):
     while not state['is_connected']:
         message = server_socket.recv(2048).decode()
+        print("i am here",message)
         if message:
+            # if state['responce']==True:    
+                
             print("<SERVER> : ",message)
             message = json.loads(message)
             if message['status']:
                 state['connected_to'] = message['connect_to']
                 state['is_connected'] = True
+            else:
+                print("USER NOT FOUND !!!")
+            print("state_2!!!!!!!!!!!!!------",state)
+            
+            state['aquire_lock']=False
+            
         else:
             print("Disconnected from server...")
             break
 
 def recv_message(server_socket):
+    
     while True:
-        message = server_socket.recv(2048).decode()
+        response = server_socket.recv(2048).decode()
+        response=json.loads(response)
+        message=response['message']
+        print("response: ",response)
         if message:
-            print(message)
+            # print(response['sender'],": - ",message)
+            if not response['status']:
+                print(response['message'])
+            else:
+                print(response['sender'],": - ",message)
+                # connect_response(server_socket)
+
         else:
             print("Disconnected from server...")
             break
@@ -59,11 +84,14 @@ def init_client(server_socket):
     server_response = server_socket.recv(2048).decode()
     # print("Initial Response: ", server_response)
     server_response = json.loads(server_response)
+    print("server_response---------",server_response)
     state["avail_clients"] = server_response["clients"].split(",")
+    print("state!!!!!!!!!!!!!!!!-",state)
 
 def send_message(server_socket):
     while state["is_connected"]:
-        message = input(">> ")
+        # inp_msg = state['username']+">>"
+        message = input(">>")
         json_msg = prepare_msg("MSG", message)
         server_socket.send(json_msg)
 
@@ -75,6 +103,7 @@ def main():
     server_socket.connect((IP_ADDR, PORT)) 
     
     state['is_connected'] = False
+    state['aquire_lock']=False
     state["username"] = input("Enter your username: ")
 
     init_client(server_socket)
@@ -111,6 +140,7 @@ def main():
             thread_user_send.join()
             thread_user_recv.join()
             print("Connection closed")
+            
             break
 
     print("Exiting...")

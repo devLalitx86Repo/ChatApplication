@@ -8,6 +8,7 @@ from _thread import *
 clients = {}
 client_sockets = {}
 client_unames = {}
+client_ready=[]
 
 def to_json(data):
     return json.dumps(data)
@@ -24,6 +25,7 @@ def connectClient(conn, addr):
                 process_msg(message.decode(), conn, addr)
             else:
                 print("Disconnected from: ", addr[0], ":", addr[1])
+                
                 if addr[1] in clients:
                     clients.pop(addr[1]) 
                 break
@@ -45,15 +47,31 @@ def process_msg(message, conn, addr):
         print("New client connected: ", username, ":", addr[1])
     
     elif message['type'] == 'connect':
-        response = {"type": "connect","status":True ,"connect_to": message['receiver'], "message": "Connect Request successful"}
+        avaliable=False
+        status_msg="user not found"
+        print("message------",message)
+        if message['receiver'] in client_unames:
+            avaliable=True
+            status_msg="Connect Request successful"
+            client_ready.append(message['sender'])
+        response = {"type": "connect","status":avaliable ,"connect_to": message['receiver'], "message":status_msg }
+        # print("connect------",response)
         conn.send(to_json(response).encode())
     
     elif message['type'] == 'MSG':
         send_to = message['send_to']
-        if send_to in client_unames:
+        print("Messege for ",send_to)
+        if send_to in client_ready:
+            response={'message':message['message'], "status":True ,'sender':message['sender']}
             port = client_unames[send_to]
-            clients[port][1].send(message['message'].encode())
-
+            clients[port][1].send(to_json(response).encode())
+            print("message sent")
+        # print(client_ready)
+        else: 
+            response = {"type": "error","status":False ,"message":"client not avaliable" }
+            print("responce: ",response)
+            conn.send(to_json(response).encode())
+            # print(client_ready,"----",response)
     
     else:
         print("Unknown message type: ", message['type'])
